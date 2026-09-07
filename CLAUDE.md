@@ -251,12 +251,11 @@ already dead".
   wizard builds a correct config for that case and the FAQ states the limit;
   the answer for open public play is a forwarded port.
 - `certs/` and `lima-bin/` are gitignored build/signing inputs.
-- **`npm run bundle` passes the project dir explicitly.**
-  `sdk/utils/bundle-electron.js` defaults `projectDir` to
-  `path.resolve(__dirname, '..')`, which was the repo root when that file lived
-  at `__shared__/scripts/` but is `<repo>/sdk` in the submodule layout. The
-  scripts here pass `.`; **the other three ai-mentat repos still omit it, so
-  their `bundle` and `gui` scripts fail** — worth fixing in the SDK.
+- **`npm run bundle` needs no argument.** The SDK locates the app by walking
+  up from `sdk/utils/` until it finds `electron-main.js`, so the submodule and
+  npm-install layouts both work. Fixed in the SDK on 2026-09-07; before that
+  its default resolved to `<repo>/sdk` and every bundle/gui/build script in
+  every consuming repo failed.
 - **Electron's postinstall may not fetch its binary.** If
   `node_modules/electron/dist` is missing after `npm install`, run
   `(cd node_modules/electron && node install.js)`.

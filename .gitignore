@@ -18,3 +18,7 @@ settings.json
 # environment files — never commit
 .env
 .env.*
+
+# copied out of the SDK at bundle time (sdk/ui/update-bar.js).
+# Anchored to the root so the source copy in sdk/ stays tracked.
+/update-ui.js
