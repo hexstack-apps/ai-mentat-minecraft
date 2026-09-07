@@ -10,17 +10,17 @@
   },
   "scripts": {
     "setup": "node scripts/setup.js",
-    "run": "npm run setup && node sdk/utils/bundle-electron.js && electron electron-main.bundle.js",
+    "run": "npm run setup && node sdk/utils/bundle-electron.js . && electron electron-main.bundle.js",
     "build": "node scripts/build-app.js",
     "check": "npm run build && node scripts/start-built.js",
-    "gui": "node sdk/utils/bundle-electron.js && electron electron-main.bundle.js",
+    "gui": "node sdk/utils/bundle-electron.js . && electron electron-main.bundle.js",
     "test": "node --test 'test/*.js'",
     "test:mutation": "sh test/discriminates.sh",
-    "bundle": "node sdk/utils/bundle-electron.js",
-    "build:mac": "node sdk/utils/bundle-electron.js && electron-builder --mac dmg --universal -c.mac.identity=null",
-    "build:mac:signed": "node sdk/utils/bundle-electron.js && APPLE_KEYCHAIN_PROFILE=CCO-notary electron-builder --mac dmg --universal",
-    "build:win": "node sdk/utils/bundle-electron.js && electron-builder --win msi",
-    "build:linux": "node sdk/utils/bundle-electron.js && electron-builder --linux deb",
+    "bundle": "node sdk/utils/bundle-electron.js .",
+    "build:mac": "node sdk/utils/bundle-electron.js . && electron-builder --mac dmg --universal -c.mac.identity=null",
+    "build:mac:signed": "node sdk/utils/bundle-electron.js . && APPLE_KEYCHAIN_PROFILE=CCO-notary electron-builder --mac dmg --universal",
+    "build:win": "node sdk/utils/bundle-electron.js . && electron-builder --win msi",
+    "build:linux": "node sdk/utils/bundle-electron.js . && electron-builder --linux deb",
     "build:all": "npm run build:mac && npm run build:win && npm run build:linux",
     "dist": "npm run build:all",
     "publish": "node sdk/logic/publish.js --app=mentat-mcbes",
@@ -56,7 +56,8 @@
   "devDependencies": {
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0"
   },
   "build": {
     "appId": "app.hexstack.mentat-mcbes",

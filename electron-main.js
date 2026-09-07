@@ -24,6 +24,7 @@ const CB = require('./lib/console-bridge');
 const MACROS = require('./lib/macros');
 const BRIDGE = require('./lib/bridge-protocol');
 const CF = require('./lib/cloudflared');
+const { memoize } = require('./lib/ttl-cache');
 const { quiet, attempt } = require('./lib/failsafe');
 const { resolveDataDir } = require('./sdk/utils/data-dir');
 const { setupAutoUpdate } = require('./sdk/logic/auto-update');
@@ -84,6 +85,10 @@ if (!bridgeToken) {
 // ─── Settings ─────────────────────────────────────────────────────────────
 
 function loadSettings() {
+  // An absent settings.json is the normal first-run state, not a failure --
+  // recording it on every status poll floods the bounded failsafe buffer and
+  // buries the errors that do matter. Only a real read/parse error is recorded.
+  if (!fs.existsSync(SETTINGS_FILE)) return {};
   return quiet('settings.read', () => JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')), {});
 }
 
@@ -151,12 +156,20 @@ function limactl() {
   });
 }
 
-function vmStatus() {
+const PROBE_TTL_MS = 30000;
+
+/**
+ * VM status, cached. The uncached form blocked the main process on every
+ * status poll -- with a Broken VM each probe ran to its 20s timeout and the
+ * window stopped responding altogether. Invalidated by any action that can
+ * change the answer.
+ */
+const vmStatus = memoize(() => {
   const bin = limactl();
   if (!bin) return 'Absent';
   const out = tryRun('lima.list', bin, ['list', '--json'], { stdio: 'pipe', timeout: 15000 });
   return out === null ? 'Unknown' : RT.vmStatus(out);
-}
+}, PROBE_TTL_MS);
 
 /** Bring the VM up, creating it on first run. Slow — the GUI reports progress. */
 async function ensureVm() {
@@ -312,6 +325,9 @@ function runMacrosFor(event) {
 // ─── server.properties ────────────────────────────────────────────────────
 
 function readProperties() {
+  // Same reasoning as loadSettings: the file does not exist until the server
+  // is installed, and that is expected rather than noteworthy.
+  if (!fs.existsSync(PROPERTIES_FILE)) return { ...BDS.DEFAULTS };
   const text = quiet('bds.readProperties', () => fs.readFileSync(PROPERTIES_FILE, 'utf8'), null);
   return text === null ? { ...BDS.DEFAULTS } : BDS.parseServerProperties(text);
 }
@@ -334,11 +350,21 @@ function nativeBinary() {
   return path.join(serverDir, process.platform === 'win32' ? 'bedrock_server.exe' : 'bedrock_server');
 }
 
-function isServerInstalled() {
+/** Cached for the same reason as vmStatus -- see PROBE_TTL_MS. */
+const isServerInstalled = memoize(() => {
   if (runtime === 'native') return fs.existsSync(nativeBinary());
+  // Asking a broken or stopped VM about its images cannot succeed, and costs
+  // a full 20s timeout to find out. Check the VM first.
+  if (!RT.isVmUsable(vmStatus())) return false;
   const out = tryRun('container.images', limactl() || 'limactl',
     RT.nerdctlArgs(['images', '--format', '{{.Repository}}']), { stdio: 'pipe', timeout: 20000 });
   return typeof out === 'string' && out.includes(BDS.CONTAINER_IMAGE);
+}, PROBE_TTL_MS);
+
+/** Drop cached probe answers after an action that can change them. */
+function invalidateProbes() {
+  vmStatus.invalidate();
+  isServerInstalled.invalidate();
 }
 
 async function startNative() {
@@ -604,11 +630,21 @@ ipcMain.handle('server:status', async () => ({
   properties: readProperties(),
 }));
 
-ipcMain.handle('server:start', async () => startServer());
-ipcMain.handle('server:stop', async () => stopServer());
+ipcMain.handle('server:start', async () => {
+  const r = await startServer();
+  invalidateProbes();
+  return r;
+});
+ipcMain.handle('server:stop', async () => {
+  const r = await stopServer();
+  invalidateProbes();
+  return r;
+});
 ipcMain.handle('server:restart', async () => {
   await stopServer();
-  return startServer();
+  const r = await startServer();
+  invalidateProbes();
+  return r;
 });
 ipcMain.handle('server:command', async (_, command) => sendCommand(command));
 ipcMain.handle('server:save-properties', async (_, changes) => {
@@ -625,6 +661,7 @@ ipcMain.handle('server:install', async () => {
     if (!vm.ok) return { success: false, error: vm.error };
     try {
       run(limactl(), RT.nerdctlArgs(['pull', BDS.CONTAINER_IMAGE]), { timeout: 900000, stdio: 'pipe' });
+      invalidateProbes();
       return { success: true };
     } catch (e) {
       return { success: false, error: (e.stderr && e.stderr.toString().trim()) || e.message };

@@ -214,3 +214,22 @@ already dead".
   wizard builds a correct config for that case and the FAQ states the limit;
   the answer for open public play is a forwarded port.
 - `certs/` and `lima-bin/` are gitignored build/signing inputs.
+- **`npm run bundle` passes the project dir explicitly.**
+  `sdk/utils/bundle-electron.js` defaults `projectDir` to
+  `path.resolve(__dirname, '..')`, which was the repo root when that file lived
+  at `__shared__/scripts/` but is `<repo>/sdk` in the submodule layout. The
+  scripts here pass `.`; **the other three ai-mentat repos still omit it, so
+  their `bundle` and `gui` scripts fail** — worth fixing in the SDK.
+- **Electron's postinstall may not fetch its binary.** If
+  `node_modules/electron/dist` is missing after `npm install`, run
+  `(cd node_modules/electron && node install.js)`.
+- To run and screenshot the GUI, use the project skill at
+  `.claude/skills/run-app/` — it documents the driver and its gotchas.
+- **`server:status` probes are cached for 30s** (`lib/ttl-cache.js`). Uncached,
+  every renderer poll spawned `limactl list --json` and `nerdctl images`
+  synchronously, which flooded the failsafe buffer and blocked the main
+  process. Call `invalidateProbes()` after anything that changes VM or image
+  state.
+- **A missing `settings.json` or `server.properties` is not a failure.** Both
+  reads check existence first, because recording an expected first-run absence
+  on every poll buries the errors the failsafe buffer exists to surface.

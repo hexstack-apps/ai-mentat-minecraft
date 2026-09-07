@@ -227,6 +227,32 @@ mutate "configured no longer requires a tunnel id" lib/cloudflared.js \
   "    configured: !!(tunnel && hostname)," \
   "    configured: !!hostname,"
 
+
+# ── lib/ttl-cache.js ──────────────────────────────────────────────────────
+
+mutate "probe cache never caches (main process blocks on every poll)" lib/ttl-cache.js \
+  "    if (cachedAt !== null && now - cachedAt < ttlMs) return value;" \
+  "    ;"
+
+mutate "cache never expires (stale VM status forever)" lib/ttl-cache.js \
+  "    cachedAt = clock();
+    return value;" \
+  "    cachedAt = Infinity;
+    return value;"
+
+mutate "freshness stamped before the probe, not after" lib/ttl-cache.js \
+  "    value = fn(...args);
+    // Stamp the time AFTER the call: a probe that takes 20s should be fresh
+    // for ttl from when it finished, not from when it started, or a slow probe
+    // is stale the moment it returns and runs again immediately.
+    cachedAt = clock();" \
+  "    cachedAt = clock();
+    value = fn(...args);"
+
+mutate "invalidate stops forcing a re-probe" lib/ttl-cache.js \
+  "  wrapped.invalidate = () => { cachedAt = null; value = undefined; };" \
+  "  wrapped.invalidate = () => {};"
+
 # ── lib/failsafe.js ───────────────────────────────────────────────────────
 
 mutate "failsafe stops recording failures" lib/failsafe.js \

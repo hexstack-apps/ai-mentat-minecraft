@@ -339,13 +339,17 @@ window.addEventListener('resize', () => {
 async function refreshTunnel() {
   const { installed } = await api.cloudflaredCheck();
   setDot('cf-dot', installed ? 'green' : 'red');
-  show('cf-install-btn', !installed);
+  // Hide the whole ROW, not just the button: an empty .row still occupies its
+  // height and margin, which left a satisfied step as a tall blank card.
+  show('cf-install-row', !installed);
+  setMsg('cf-msg', installed ? 'cloudflared is installed.' : '', installed ? 'success' : '');
   show('step-auth', installed);
   if (!installed) return;
 
   const { authenticated } = await api.cloudflaredAuthStatus();
   setDot('auth-dot', authenticated ? 'green' : 'red');
-  show('auth-btn', !authenticated);
+  show('auth-row', !authenticated);
+  setMsg('auth-msg', authenticated ? 'Authenticated with Cloudflare.' : '', authenticated ? 'success' : '');
   show('step-setup', authenticated);
   if (!authenticated) return;
 
@@ -423,4 +427,6 @@ refreshTunnel();
 
 // Poll the server view: the VM and container can change state without an event
 // reaching us (a VM stopped from a terminal, a container killed externally).
-setInterval(refreshServer, 5000);
+// The expensive probes behind this are cached in the main process for 30s, so
+// the poll is cheap; it is deliberately slower than that cache is fresh.
+setInterval(refreshServer, 10000);
