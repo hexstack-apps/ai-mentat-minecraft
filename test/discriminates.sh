@@ -150,6 +150,38 @@ mutate "unsafe placeholder value injected into a live command" lib/macros.js \
   "    return isSafeValue(value) ? String(value) : '';" \
   "    return String(value === undefined ? '' : value);"
 
+
+# ── lib/macros.js — builder schema ────────────────────────────────────────
+
+mutate "builder offers a trigger the bridge cannot deliver" lib/macros.js \
+  "const TRIGGER_SPECS = [" \
+  "const TRIGGER_SPECS = [
+  { event: 'PlayerTransform', type: 'trigger:on_player_transform', label: 'Player moves', placeholders: ['player'] },"
+
+mutate "requiredFields returns optional inputs too" lib/macros.js \
+  "  return spec.inputs.filter((i) => i.required).map((i) => i.name);" \
+  "  return spec.inputs.map((i) => i.name);"
+
+mutate "newAction stops pre-filling declared defaults" lib/macros.js \
+  "    if (input.default !== undefined) config[input.name] = input.default;" \
+  "    ;"
+
+mutate "newAction stops defaulting a select to its first option" lib/macros.js \
+  "    else if (input.type === 'select' && input.options) config[input.name] = input.options[0];" \
+  "    ;"
+
+mutate "newRow accepts an unfireable event instead of falling back" lib/macros.js \
+  "  const trigger = TRIGGER_SPECS.find((t) => t.event === event) || TRIGGER_SPECS[0];" \
+  "  const trigger = { event, type: \`trigger:on_\${event}\`, label: event };"
+
+mutate "the dimension_is limitation note is dropped" lib/macros.js \
+  "    note: 'The console bridge does not report a dimension. Only \"any\" can match; '" \
+  "    note2: 'The console bridge does not report a dimension. Only \"any\" can match; '"
+
+mutate "builderSchema hides an action from the form" lib/macros.js \
+  "    actions: Object.entries(ACTIONS).map(([type, spec]) => ({" \
+  "    actions: Object.entries(ACTIONS).slice(1).map(([type, spec]) => ({"
+
 # ── lib/bds.js ────────────────────────────────────────────────────────────
 
 mutate "unmodelled server.properties keys discarded on save" lib/bds.js \

@@ -13,6 +13,7 @@
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { spawn, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -697,7 +698,10 @@ ipcMain.handle('macros:save', async (_, file, text) => {
   const parsed = MACROS.parseMacro(text);
   if (!parsed.ok) return { success: false, error: parsed.errors.join('; ') };
   try {
-    fs.writeFileSync(path.join(macrosDir, safe), typeof text === 'string' ? text : JSON.stringify(text, null, 2));
+    // Stamp the edit time on the document we actually write, so a builder save
+    // and a hand-edited file are indistinguishable afterwards.
+    const doc = { ...parsed.macro, updatedAt: new Date().toISOString() };
+    fs.writeFileSync(path.join(macrosDir, safe), JSON.stringify(doc, null, 2));
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -722,6 +726,41 @@ ipcMain.handle('macros:set-enabled', async (_, id, enabled) => {
   else current.delete(id);
   saveSettings({ enabledMacros: [...current] });
   return { success: true, report: reloadMacros() };
+});
+
+/**
+ * Everything the builder form is drawn from. Served rather than duplicated in
+ * the renderer so the UI and the compiler cannot drift apart.
+ */
+ipcMain.handle('macros:schema', async () => MACROS.builderSchema());
+
+/** A blank v2 document. Ids come from here so the renderer needs no crypto. */
+ipcMain.handle('macros:new', async (_, name) => ({
+  macro: MACROS.newMacro({ id: crypto.randomUUID(), name: typeof name === 'string' && name.trim() ? name.trim() : undefined }),
+}));
+
+ipcMain.handle('macros:new-row', async (_, event) => ({
+  row: MACROS.newRow({ id: crypto.randomUUID(), event: typeof event === 'string' ? event : undefined }),
+}));
+
+ipcMain.handle('macros:new-action', async (_, type) => {
+  try {
+    return { ok: true, action: MACROS.newAction({ id: crypto.randomUUID(), type }) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+/**
+ * Compile a DRAFT document without saving it, so the builder can show the
+ * exact commands a row will run. Uses the same compiler the engine does --
+ * a preview computed any other way would eventually lie.
+ */
+ipcMain.handle('macros:preview', async (_, doc) => {
+  const parsed = MACROS.parseMacro(doc);
+  if (!parsed.ok) return { ok: false, errors: parsed.errors, byEvent: {}, skipped: [] };
+  const { byEvent, skipped } = MACROS.compileMacro(parsed.macro);
+  return { ok: true, errors: [], warnings: parsed.warnings, byEvent, skipped };
 });
 
 ipcMain.handle('macros:open-folder', async () => {

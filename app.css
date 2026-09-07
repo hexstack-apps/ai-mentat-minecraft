@@ -443,3 +443,145 @@ select:focus { outline: none; border-color: #ff6d5a; }
   border-color: #4a3a22;
 }
 .card.notice h3 { color: #e0b070; }
+
+/* ── Macro builder ──────────────────────────────────────────────────────
+   The clause layout (WHEN / IF / DO) mirrors the .macro v2 row shape, so what
+   the form shows and what the compiler reads line up one-to-one. */
+
+.builder__head {
+  align-items: center;
+  border-bottom: 1px solid #2a2a3e;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+.builder__name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+.builder__file {
+  color: #6d6d88;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.builder__row {
+  background: #1e1e33;
+  border: 1px solid #2f2f47;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+.builder__row-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.builder__row-title {
+  color: #8888aa;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.builder__clause {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.builder__clause--stack { align-items: flex-start; }
+
+/* Fixed width so WHEN / IF / DO line up down the left edge and the clauses
+   read as a sentence rather than three unrelated rows. */
+.builder__keyword {
+  color: #ff6d5a;
+  flex-shrink: 0;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding-top: 7px;
+  width: 44px;
+}
+
+.builder__hint {
+  color: #6d6d88;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.builder__list { flex: 1; }
+
+.builder__item {
+  background: #23233a;
+  border: 1px solid #33334d;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 9px 11px;
+}
+.builder__item-head {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.builder__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.builder__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.builder__field-label {
+  color: #8888aa;
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.builder__input {
+  background: #1a1a2e;
+  border: 1px solid #33334d;
+  border-radius: 5px;
+  color: #e0e0e0;
+  font-size: 12.5px;
+  min-width: 130px;
+  padding: 6px 9px;
+}
+.builder__input:focus { border-color: #ff6d5a; outline: none; }
+
+.builder__add {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+/* A limitation of the transport, stated where the choice is made. */
+.builder__note {
+  color: #d9a05b;
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin-top: 7px;
+}
+
+.builder__preview { margin-top: 6px; }
+.builder__preview h4 {
+  color: #8888aa;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.builder__preview-pre {
+  height: 140px;
+  margin-bottom: 12px;
+}

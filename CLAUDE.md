@@ -24,13 +24,16 @@ the `lib/` split. The original file names differed — the console bridge lived
 in `wsServer.js`, and `runtime.js` there was MCMacro's, patched to pass `opts`
 through `startServer(port, opts)` into `wsServer.start()`.
 
-**Not restored:** the macro *builder*. It was a prebuilt React app
-(`mcmacro-ui` / `mcmacro-engine`) committed as compiled artifacts and mounted
-in an Electron `<webview>`, with `navigator.clipboard` polyfilled over IPC in
-`mcmacro-preload.js`. Its source repo is gone and the artifacts went with the
-monorepo. What exists here instead is the macro **engine and reporting**, which
-reads and runs the real v2 format. If the `mcmacro` repo ever resurfaces, the
-webview can be reattached over this engine.
+**Rebuilt, not restored:** the macro **builder**. The original was a prebuilt
+React app (`mcmacro-ui` / `mcmacro-engine`) committed as compiled artifacts and
+mounted in an Electron `<webview>`, with `navigator.clipboard` polyfilled over
+IPC in `mcmacro-preload.js`. That source repo and those artifacts are both
+gone, and nothing on disk holds them — the leftover `mcmacro` profile is only
+DevTools metadata and V8 bytecode caches.
+
+The Macros tab now carries a **native builder** instead: no webview, no
+external artifacts. It writes the same v2 documents the surviving April files
+use, and it is driven entirely by `builderSchema()` — see below.
 
 **Also not restored:** `icon.png`. The build config therefore names no icon and
 electron-builder falls back to the default Electron one. Drop an `icon.png` in
@@ -41,8 +44,8 @@ and add `"icon": "icon.png"` to `build.mac` / `build.win` / `build.linux`.
 ```sh
 npm install
 npm run gui            # esbuild the main process, then launch
-npm test               # 124 unit tests, no deps, no Electron, no display
-npm run test:mutation  # 44 mutation checks — every fix must fail when reverted
+npm test               # 145 unit tests, no deps, no Electron, no display
+npm run test:mutation  # 55 mutation checks — every fix must fail when reverted
 npm run download:lima  # fetch the bundled limactl (macOS/Linux)
 ```
 
@@ -83,6 +86,40 @@ well listen for `PlayerTransform`, which can never fire here.
 `macros.rowSupport()` therefore returns a *reason*, the Macros tab renders it,
 and the MCP tool description says it out loud. **Never register a listener that
 cannot fire.**
+
+### The builder is generated from the compiler's own table
+
+`ACTIONS` in `lib/macros.js` carries both the `build` function the compiler
+calls **and** the `inputs` metadata the builder form is drawn from, and
+`requiredFields()` derives validation from those same `inputs`. One table, two
+consumers, on purpose: a separate UI table would drift, and the drift would be
+invisible — a form offering a field the compiler ignores, or omitting one it
+demands. **Adding an action type to `ACTIONS` makes it appear in the builder
+with no UI change**, and there is a test asserting the schema exposes exactly
+the real set, in both directions.
+
+**The builder only offers the three triggers the bridge can deliver**, and
+`newRow()` falls back to a valid one for an unknown event. That is what stops
+someone building a rule that can never fire — the same concern `rowSupport()`
+handles for files written elsewhere.
+
+**The compile preview comes from the real compiler over IPC**
+(`macros:preview`), not a reimplementation in the renderer. A preview computed
+independently would eventually disagree with what actually runs.
+
+**Changing an action's type replaces its config wholesale.** The old fields
+belong to a different command, and carrying them over would leave values the
+new action silently ignores.
+
+**A duplicate gets a new id.** The id is what the enabled-macro list keys on,
+so sharing one would make enabling the copy enable the original too.
+
+**The filename is stable once saved.** Renaming on every title edit would
+strand the enabled list and litter the folder with orphans.
+
+**`results` are preserved but not edited.** They are part of the v2 schema and
+the builder does not model them, so a row carrying them shows a note saying
+they survive the round trip — same reasoning as merging `server.properties`.
 
 ### Two runtimes, because Mojang ships no macOS build
 
