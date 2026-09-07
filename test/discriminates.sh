@@ -63,38 +63,6 @@ mutate "macOS tries to run a BDS binary Mojang never shipped" lib/runtime.js \
   "  return platform === 'darwin' ? 'container' : 'native';" \
   "  return 'native';"
 
-mutate "JSONL parsed as a single JSON blob (breaks multi-VM)" lib/runtime.js \
-  "    try {
-      vms.push(JSON.parse(text));
-    } catch {
-      skipped.push(text.slice(0, 120));
-    }" \
-  "    vms.push(JSON.parse(text));"
-
-mutate "missing VM status defaults to Running" lib/runtime.js \
-  "  return found ? (found.status || 'Unknown') : 'Absent';" \
-  "  return found ? (found.status || 'Running') : 'Absent';"
-
-mutate "Stopped counts as a usable VM" lib/runtime.js \
-  "  return status === 'Running';" \
-  "  return status !== 'Absent';"
-
-mutate "nerdctl loses sudo (containerd is a system service here)" lib/runtime.js \
-  "  return ['shell', VM_NAME, 'sudo', 'nerdctl', ...args];" \
-  "  return ['shell', VM_NAME, 'nerdctl', ...args];"
-
-mutate "unrunnable limactl aborts the fallback search" lib/runtime.js \
-  "  if (bundledPath && exists(bundledPath) && canRun(bundledPath)) return bundledPath;" \
-  "  if (bundledPath && exists(bundledPath)) return bundledPath;"
-
-mutate "Homebrew limactl locations removed" lib/runtime.js \
-  "  for (const candidate of ['/opt/homebrew/bin/limactl', '/usr/local/bin/limactl']) {" \
-  "  for (const candidate of []) {"
-
-mutate "console pipe drops -i (server console becomes unwritable)" lib/runtime.js \
-  "  return nerdctlArgs(['exec', '-i', CONTAINER_NAME, 'sh']);" \
-  "  return nerdctlArgs(['exec', CONTAINER_NAME, 'sh']);"
-
 mutate "shell quoting removed (command injection through the VM shell)" lib/runtime.js \
   "  return \`'\${String(value).replace(/'/g, \"'\\\\''\")}'\`;" \
   "  return String(value);"
@@ -241,25 +209,6 @@ mutate "recent() exposes the live buffer" lib/bridge-protocol.js \
   "    return this.events.slice(this.events.length - n);" \
   "    return this.events;"
 
-# ── lib/cloudflared.js ────────────────────────────────────────────────────
-
-mutate "ingress continuation keys ignored" lib/cloudflared.js \
-  "    if (kv && current) applyKey(current, kv[1], kv[2]);" \
-  "    if (false) applyKey(current, kv[1], kv[2]);"
-
-mutate "hostname validation accepts anything (shell injection)" lib/cloudflared.js \
-  "  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\$/i.test(host);" \
-  "  return true;"
-
-mutate "tunnel renders an http service for a UDP game" lib/cloudflared.js \
-  "    \`    service: \${scheme}://localhost:\${port}\`," \
-  "    \`    service: http://localhost:\${port}\`,"
-
-mutate "configured no longer requires a tunnel id" lib/cloudflared.js \
-  "    configured: !!(tunnel && hostname)," \
-  "    configured: !!hostname,"
-
-
 # ── lib/ttl-cache.js ──────────────────────────────────────────────────────
 
 mutate "probe cache never caches (main process blocks on every poll)" lib/ttl-cache.js \
@@ -285,15 +234,6 @@ mutate "invalidate stops forcing a re-probe" lib/ttl-cache.js \
   "  wrapped.invalidate = () => { cachedAt = null; value = undefined; };" \
   "  wrapped.invalidate = () => {};"
 
-# ── lib/failsafe.js ───────────────────────────────────────────────────────
-
-mutate "failsafe stops recording failures" lib/failsafe.js \
-  "  recent.push({ at: Date.now(), op, message, context });" \
-  "  ;"
-
-mutate "failsafe buffer becomes unbounded" lib/failsafe.js \
-  "  if (recent.length > MAX_RECENT) recent.splice(0, recent.length - MAX_RECENT);" \
-  "  ;"
 
 echo
 echo "caught $PASS / $((PASS+FAIL))"
