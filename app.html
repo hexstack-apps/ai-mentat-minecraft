@@ -8,9 +8,8 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
   <title>Minecraft Mentat</title>
-  <link rel="stylesheet" href="sdk/ui/base.css">
   <link rel="stylesheet" href="app.css">
-  <link rel="stylesheet" href="sdk/vendor/xterm.css">
+  <link rel="stylesheet" href="vendor/xterm.css">
 </head>
 <body>
 
@@ -121,40 +120,10 @@
           Rows listening for anything else are listed below as not runnable.
         </p>
         <div class="row">
-          <button class="btn" id="macros-new-btn">+ New macro</button>
-          <button class="btn secondary" id="macros-refresh-btn">Refresh</button>
-          <button class="btn secondary" id="macros-folder-btn">Open macros folder</button>
+          <button class="btn" id="macros-refresh-btn">Refresh</button>
+          <button class="btn" id="macros-folder-btn">Open macros folder</button>
         </div>
         <div id="macros-msg" class="msg"></div>
-      </div>
-
-      <!-- The builder. Every control in here is generated from the schema the
-           main process serves, so it tracks lib/macros.js automatically. -->
-      <div class="card builder" id="builder" style="display:none">
-        <div class="builder__head">
-          <input type="text" id="builder-name" class="builder__name" placeholder="Macro name">
-          <span class="builder__file" id="builder-file"></span>
-          <label class="inline-check"><input type="checkbox" id="builder-enabled"> Enabled</label>
-        </div>
-
-        <div id="builder-rows"></div>
-
-        <div class="row">
-          <button class="btn secondary" id="builder-add-row">+ Add rule</button>
-        </div>
-
-        <div class="builder__preview">
-          <h4>Compiles to</h4>
-          <pre id="builder-preview" class="console-log builder__preview-pre"></pre>
-        </div>
-
-        <div id="builder-msg" class="msg"></div>
-        <div class="row">
-          <button class="btn" id="builder-save">Save</button>
-          <button class="btn secondary" id="builder-duplicate">Duplicate</button>
-          <button class="btn danger" id="builder-delete">Delete</button>
-          <button class="btn secondary" id="builder-close">Close</button>
-        </div>
       </div>
 
       <div id="macro-cards"></div>
@@ -217,7 +186,7 @@
 
       <div class="card" id="step-install">
         <h3><span id="cf-dot" class="status-dot"></span> Step 1 — Install cloudflared</h3>
-        <div class="row" id="cf-install-row">
+        <div class="row">
           <button class="btn" id="cf-install-btn">Install cloudflared</button>
         </div>
         <div id="cf-msg" class="msg"></div>
@@ -225,7 +194,7 @@
 
       <div class="card" id="step-auth" style="display:none">
         <h3><span id="auth-dot" class="status-dot"></span> Step 2 — Authenticate with Cloudflare</h3>
-        <div class="row" id="auth-row">
+        <div class="row">
           <button class="btn" id="auth-btn">Authenticate</button>
         </div>
         <div id="auth-msg" class="msg"></div>
@@ -333,8 +302,8 @@
 
 </div>
 
-<script src="sdk/vendor/xterm.js"></script>
-<script src="sdk/vendor/addon-fit.js"></script>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
 <script src="sdk/ui/update-bar.js"></script>
 <script src="app.js"></script>
 </body>

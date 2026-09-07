@@ -1,9 +1,8 @@
 {
   "name": "ai-mentat-minecraft",
   "version": "0.1.0",
-  "description": "Hexstack Mentat MCBES \u2014 local Minecraft Bedrock server desktop app with macros, Claude Code MCP and a Cloudflare tunnel",
+  "description": "Hexstack Mentat MCBES — local Minecraft Bedrock server desktop app with macros, Claude Code MCP and a Cloudflare tunnel",
   "main": "electron-main.bundle.js",
-  "productName": "Hexstack Mentat MCBES",
   "shop_link": "https://hexstack.app/mentat-mcbes/",
   "itch_io": {
     "user": "hexstack-app",
@@ -26,8 +25,7 @@
     "dist": "npm run build:all",
     "publish": "node sdk/logic/publish.js --app=mentat-mcbes",
     "release": "node sdk/logic/release.js",
-    "download:lima": "node scripts/download-lima.js",
-    "build:mac:store": "node sdk/utils/bundle-electron.js && electron-builder --mac mas"
+    "download:lima": "node scripts/download-lima.js"
   },
   "keywords": [
     "minecraft",
@@ -58,8 +56,7 @@
   "devDependencies": {
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.2",
-    "playwright-core": "^1.63.0"
+    "esbuild": "^0.28.2"
   },
   "build": {
     "appId": "app.hexstack.mentat-mcbes",
@@ -76,7 +73,7 @@
     "buildDependenciesFromSource": false,
     "npmRebuild": false,
     "asarUnpack": [
-      "sdk/utils/pty-helper.py"
+      "pty-helper.py"
     ],
     "files": [
       "electron-main.bundle.js",
@@ -84,10 +81,9 @@
       "app.html",
       "app.css",
       "app.js",
-      "sdk/vendor/",
-      "sdk/ui/base.css",
+      "pty-helper.py",
+      "vendor/",
       "sdk/ui/update-bar.js",
-      "sdk/utils/pty-helper.py",
       "package.json"
     ],
     "extraResources": [
@@ -104,8 +100,8 @@
       "identity": "Roman Chuvilev (A646WU4GA4)",
       "notarize": true,
       "hardenedRuntime": true,
-      "entitlements": "sdk/build/entitlements.mac.plist",
-      "entitlementsInherit": "sdk/build/entitlements.mac.plist",
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
       "target": [
         "dmg"
       ],
@@ -126,8 +122,8 @@
     "mas": {
       "identity": "3rd Party Mac Developer Application: Roman Chuvilev (A646WU4GA4)",
       "provisioningProfile": "./certs/mas-mentat-mcbes.provisionprofile",
-      "entitlements": "sdk/build/entitlements.mas.plist",
-      "entitlementsInherit": "sdk/build/entitlements.mas.inherit.plist"
+      "entitlements": "entitlements.mas.plist",
+      "entitlementsInherit": "entitlements.mas.inherit.plist"
     },
     "win": {
       "target": [

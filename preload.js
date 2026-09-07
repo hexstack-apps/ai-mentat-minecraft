@@ -31,11 +31,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   macrosDelete: (file) => ipcRenderer.invoke('macros:delete', file),
   macrosSetEnabled: (id, enabled) => ipcRenderer.invoke('macros:set-enabled', id, enabled),
   macrosOpenFolder: () => ipcRenderer.invoke('macros:open-folder'),
-  macrosSchema: () => ipcRenderer.invoke('macros:schema'),
-  macrosNew: (name) => ipcRenderer.invoke('macros:new', name),
-  macrosNewRow: (event) => ipcRenderer.invoke('macros:new-row', event),
-  macrosNewAction: (type) => ipcRenderer.invoke('macros:new-action', type),
-  macrosPreview: (doc) => ipcRenderer.invoke('macros:preview', doc),
 
   // Claude Code MCP
   mcpStatus: () => ipcRenderer.invoke('mcp:status'),

@@ -13,7 +13,6 @@
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { spawn, execFileSync } = require('child_process');
-const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -24,17 +23,8 @@ const BDS = require('./lib/bds');
 const CB = require('./lib/console-bridge');
 const MACROS = require('./lib/macros');
 const BRIDGE = require('./lib/bridge-protocol');
-const LIMA = require('./sdk/logic/lima');
-const { memoize } = require('./lib/ttl-cache');
-const { quiet, attempt } = require('./sdk/utils/failsafe');
-const { shellEnv: sdkShellEnv, run, tryRun } = require('./sdk/utils/env');
-const { killProcess, createCleanup } = require('./sdk/utils/proc');
-const { createSettingsStore } = require('./sdk/logic/settings');
-const { registerOpenExternal, openPathHandler } = require('./sdk/logic/shell');
-const { registerPtyIpc, resolveHelperPath } = require('./sdk/logic/pty');
-const { registerTunnelIpc } = require('./sdk/logic/tunnel-ipc');
-const { detectMcpInstalled, removeAllScopes } = require('./sdk/logic/mcp');
-const { createWindow: createWindow_ } = require('./sdk/ui/window');
+const CF = require('./lib/cloudflared');
+const { quiet, attempt } = require('./lib/failsafe');
 const { resolveDataDir } = require('./sdk/utils/data-dir');
 const { setupAutoUpdate } = require('./sdk/logic/auto-update');
 
@@ -73,6 +63,7 @@ let bridgeServer;
 let tunnelProcess;
 let ptyProcess;
 let tunnelUrl = null;
+let cleanupDone = false;
 let serverReady = false;
 let stdoutCarry = '';
 
@@ -92,9 +83,15 @@ if (!bridgeToken) {
 
 // ─── Settings ─────────────────────────────────────────────────────────────
 
-const settings = createSettingsStore({ dir: dataDir });
-const loadSettings = () => settings.load();
-const saveSettings = (patch) => settings.save(patch);
+function loadSettings() {
+  return quiet('settings.read', () => JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')), {});
+}
+
+function saveSettings(data) {
+  const merged = { ...loadSettings(), ...data };
+  attempt('settings.write', () => fs.writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2)));
+  return merged;
+}
 
 function serverPort() {
   const props = readProperties();
@@ -105,10 +102,33 @@ function serverPort() {
 // ─── Environment and process helpers ──────────────────────────────────────
 
 function shellEnv() {
-  return sdkShellEnv({
-    home: os.homedir(),
-    extra: LIMA.limaEnv(os.homedir(), RT.LIMA_DIR_NAME),
-  });
+  const home = os.homedir();
+  const isWin = process.platform === 'win32';
+  const sep = isWin ? ';' : ':';
+  const extra = [path.join(home, '.local', 'bin'), path.join(home, '.bun', 'bin')];
+  if (isWin) {
+    extra.push(
+      path.join(home, 'AppData', 'Roaming', 'npm'),
+      path.join(home, 'AppData', 'Local', 'Programs', 'claude-code'),
+    );
+  } else {
+    extra.push('/opt/homebrew/bin', '/usr/local/bin');
+  }
+  const base = process.env.PATH || (isWin ? '' : '/usr/bin:/bin');
+  return {
+    ...process.env,
+    ...RT.limaEnv(home),
+    PATH: base ? extra.join(sep) + sep + base : extra.join(sep),
+  };
+}
+
+/** Run a binary with an argv ARRAY — never a composed command string. */
+function run(bin, args, opts = {}) {
+  return execFileSync(bin, args, { encoding: 'utf8', ...opts, env: { ...shellEnv(), ...opts.env } });
+}
+
+function tryRun(op, bin, args, opts = {}) {
+  return quiet(op, () => run(bin, args, opts), null);
 }
 
 function send(channel, payload) {
@@ -124,40 +144,32 @@ function bundledLimactl() {
 }
 
 function limactl() {
-  return LIMA.resolveLimactl({
+  return RT.resolveLimactl({
     bundledPath: bundledLimactl(),
     exists: (p) => fs.existsSync(p),
     canRun: (p) => tryRun('lima.canRun', p, ['--version'], { stdio: 'pipe', timeout: 5000 }) !== null,
   });
 }
 
-const PROBE_TTL_MS = 30000;
-
-/**
- * VM status, cached. The uncached form blocked the main process on every
- * status poll -- with a Broken VM each probe ran to its 20s timeout and the
- * window stopped responding altogether. Invalidated by any action that can
- * change the answer.
- */
-const vmStatus = memoize(() => {
+function vmStatus() {
   const bin = limactl();
   if (!bin) return 'Absent';
   const out = tryRun('lima.list', bin, ['list', '--json'], { stdio: 'pipe', timeout: 15000 });
-  return out === null ? 'Unknown' : LIMA.vmStatus(out, RT.VM_NAME);
-}, PROBE_TTL_MS);
+  return out === null ? 'Unknown' : RT.vmStatus(out);
+}
 
 /** Bring the VM up, creating it on first run. Slow — the GUI reports progress. */
 async function ensureVm() {
   const bin = limactl();
-  if (!bin) return { ok: false, error: LIMA.missingLimaMessage({ downloadScript: 'npm run download:lima' }) };
+  if (!bin) return { ok: false, error: RT.limactlMissingError() };
 
   const status = vmStatus();
-  if (LIMA.isVmUsable(status)) return { ok: true };
+  if (RT.isVmUsable(status)) return { ok: true };
 
   try {
     if (status === 'Absent') {
       send('server:log', `[mentat] creating the "${RT.VM_NAME}" VM (first run, this takes a few minutes)\n`);
-      fs.mkdirSync(LIMA.limaHome(os.homedir(), RT.LIMA_DIR_NAME), { recursive: true });
+      fs.mkdirSync(RT.limaHome(os.homedir()), { recursive: true });
       run(bin, ['start', '--name', RT.VM_NAME, '--vm-type', 'vz', '--tty=false',
         `--mount-writable`, `--mount=${dataDir}:w`], { timeout: 900000, stdio: 'pipe' });
     } else {
@@ -168,7 +180,7 @@ async function ensureVm() {
     return { ok: false, error: (e.stderr && e.stderr.toString().trim()) || e.message };
   }
   const after = vmStatus();
-  return LIMA.isVmUsable(after) ? { ok: true } : { ok: false, error: `VM is ${after} after start` };
+  return RT.isVmUsable(after) ? { ok: true } : { ok: false, error: `VM is ${after} after start` };
 }
 
 // ─── Console bridge ───────────────────────────────────────────────────────
@@ -300,9 +312,6 @@ function runMacrosFor(event) {
 // ─── server.properties ────────────────────────────────────────────────────
 
 function readProperties() {
-  // Same reasoning as loadSettings: the file does not exist until the server
-  // is installed, and that is expected rather than noteworthy.
-  if (!fs.existsSync(PROPERTIES_FILE)) return { ...BDS.DEFAULTS };
   const text = quiet('bds.readProperties', () => fs.readFileSync(PROPERTIES_FILE, 'utf8'), null);
   return text === null ? { ...BDS.DEFAULTS } : BDS.parseServerProperties(text);
 }
@@ -325,21 +334,11 @@ function nativeBinary() {
   return path.join(serverDir, process.platform === 'win32' ? 'bedrock_server.exe' : 'bedrock_server');
 }
 
-/** Cached for the same reason as vmStatus -- see PROBE_TTL_MS. */
-const isServerInstalled = memoize(() => {
+function isServerInstalled() {
   if (runtime === 'native') return fs.existsSync(nativeBinary());
-  // Asking a broken or stopped VM about its images cannot succeed, and costs
-  // a full 20s timeout to find out. Check the VM first.
-  if (!LIMA.isVmUsable(vmStatus())) return false;
   const out = tryRun('container.images', limactl() || 'limactl',
-    LIMA.nerdctlArgs(RT.VM_NAME, ['images', '--format', '{{.Repository}}']), { stdio: 'pipe', timeout: 20000 });
+    RT.nerdctlArgs(['images', '--format', '{{.Repository}}']), { stdio: 'pipe', timeout: 20000 });
   return typeof out === 'string' && out.includes(BDS.CONTAINER_IMAGE);
-}, PROBE_TTL_MS);
-
-/** Drop cached probe answers after an action that can change them. */
-function invalidateProbes() {
-  vmStatus.invalidate();
-  isServerInstalled.invalidate();
 }
 
 async function startNative() {
@@ -377,17 +376,17 @@ async function startContainer() {
   // it does discard the container's own logs, which are the only record of
   // what happened last session.
   const existing = tryRun('container.inspectState', bin,
-    LIMA.nerdctlArgs(RT.VM_NAME, ['ps', '-a', '--filter', `name=${RT.CONTAINER_NAME}`, '--format', '{{.Status}}']),
+    RT.nerdctlArgs(['ps', '-a', '--filter', `name=${RT.CONTAINER_NAME}`, '--format', '{{.Status}}']),
     { stdio: 'pipe', timeout: 20000 });
 
   try {
     if (existing && existing.trim()) {
       if (!/^up/i.test(existing.trim())) {
-        run(bin, LIMA.nerdctlArgs(RT.VM_NAME, ['start', RT.CONTAINER_NAME]), { timeout: 60000, stdio: 'pipe' });
+        run(bin, RT.nerdctlArgs(['start', RT.CONTAINER_NAME]), { timeout: 60000, stdio: 'pipe' });
       }
     } else {
-      run(bin, LIMA.nerdctlArgs(RT.VM_NAME, ['pull', BDS.CONTAINER_IMAGE]), { timeout: 900000, stdio: 'pipe' });
-      run(bin, LIMA.nerdctlArgs(RT.VM_NAME, BDS.containerCreateArgs({ dataDir: serverDir, port })),
+      run(bin, RT.nerdctlArgs(['pull', BDS.CONTAINER_IMAGE]), { timeout: 900000, stdio: 'pipe' });
+      run(bin, RT.nerdctlArgs(BDS.containerCreateArgs({ dataDir: serverDir, port })),
         { timeout: 120000, stdio: 'pipe' });
     }
   } catch (e) {
@@ -424,7 +423,7 @@ async function stopServer() {
   }
   if (runtime === 'container') {
     const bin = limactl();
-    if (bin) tryRun('container.stop', bin, LIMA.nerdctlArgs(RT.VM_NAME, ['stop', RT.CONTAINER_NAME]), { timeout: 60000, stdio: 'pipe' });
+    if (bin) tryRun('container.stop', bin, RT.nerdctlArgs(['stop', RT.CONTAINER_NAME]), { timeout: 60000, stdio: 'pipe' });
     if (consolePipe) {
       attempt('console.kill', () => consolePipe.kill());
       consolePipe = null;
@@ -542,7 +541,12 @@ ipcMain.handle('mcp:status', async () => {
   if (raw) {
     const data = quiet('mcp.parseClaudeJson', () => JSON.parse(raw), null);
     if (data) {
-      registered = detectMcpInstalled(data, MCP_SERVER_NAME);
+      registered = !!(data.mcpServers && data.mcpServers[MCP_SERVER_NAME]);
+      if (!registered && data.projects) {
+        for (const project of Object.values(data.projects)) {
+          if (project && project.mcpServers && project.mcpServers[MCP_SERVER_NAME]) { registered = true; break; }
+        }
+      }
     }
   }
   return { mcpInstalled: !!settings.mcpInstalled || registered };
@@ -551,7 +555,10 @@ ipcMain.handle('mcp:status', async () => {
 ipcMain.handle('mcp:install', async () => {
   const home = os.homedir();
   const port = Number(loadSettings().bridgePort) || BRIDGE.DEFAULT_PORT;
-  removeAllScopes(MCP_SERVER_NAME, { run, cwd: home });
+  for (const scope of ['user', 'local', 'project']) {
+    tryRun(`mcp.remove.${scope}`, 'claude', ['mcp', 'remove', MCP_SERVER_NAME, '-s', scope],
+      { timeout: 15000, stdio: 'pipe', cwd: home });
+  }
   try {
     // The token goes in as an env var, never on the command line — argv is
     // world-readable in the process table.
@@ -574,7 +581,10 @@ ipcMain.handle('mcp:install', async () => {
 
 ipcMain.handle('mcp:uninstall', async () => {
   const home = os.homedir();
-  removeAllScopes(MCP_SERVER_NAME, { run, cwd: home });
+  for (const scope of ['user', 'local', 'project']) {
+    tryRun(`mcp.remove.${scope}`, 'claude', ['mcp', 'remove', MCP_SERVER_NAME, '-s', scope],
+      { timeout: 15000, stdio: 'pipe', cwd: home });
+  }
   saveSettings({ mcpInstalled: false });
   return { success: true };
 });
@@ -594,21 +604,11 @@ ipcMain.handle('server:status', async () => ({
   properties: readProperties(),
 }));
 
-ipcMain.handle('server:start', async () => {
-  const r = await startServer();
-  invalidateProbes();
-  return r;
-});
-ipcMain.handle('server:stop', async () => {
-  const r = await stopServer();
-  invalidateProbes();
-  return r;
-});
+ipcMain.handle('server:start', async () => startServer());
+ipcMain.handle('server:stop', async () => stopServer());
 ipcMain.handle('server:restart', async () => {
   await stopServer();
-  const r = await startServer();
-  invalidateProbes();
-  return r;
+  return startServer();
 });
 ipcMain.handle('server:command', async (_, command) => sendCommand(command));
 ipcMain.handle('server:save-properties', async (_, changes) => {
@@ -624,8 +624,7 @@ ipcMain.handle('server:install', async () => {
     const vm = await ensureVm();
     if (!vm.ok) return { success: false, error: vm.error };
     try {
-      run(limactl(), LIMA.nerdctlArgs(RT.VM_NAME, ['pull', BDS.CONTAINER_IMAGE]), { timeout: 900000, stdio: 'pipe' });
-      invalidateProbes();
+      run(limactl(), RT.nerdctlArgs(['pull', BDS.CONTAINER_IMAGE]), { timeout: 900000, stdio: 'pipe' });
       return { success: true };
     } catch (e) {
       return { success: false, error: (e.stderr && e.stderr.toString().trim()) || e.message };
@@ -661,10 +660,7 @@ ipcMain.handle('macros:save', async (_, file, text) => {
   const parsed = MACROS.parseMacro(text);
   if (!parsed.ok) return { success: false, error: parsed.errors.join('; ') };
   try {
-    // Stamp the edit time on the document we actually write, so a builder save
-    // and a hand-edited file are indistinguishable afterwards.
-    const doc = { ...parsed.macro, updatedAt: new Date().toISOString() };
-    fs.writeFileSync(path.join(macrosDir, safe), JSON.stringify(doc, null, 2));
+    fs.writeFileSync(path.join(macrosDir, safe), typeof text === 'string' ? text : JSON.stringify(text, null, 2));
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -691,41 +687,6 @@ ipcMain.handle('macros:set-enabled', async (_, id, enabled) => {
   return { success: true, report: reloadMacros() };
 });
 
-/**
- * Everything the builder form is drawn from. Served rather than duplicated in
- * the renderer so the UI and the compiler cannot drift apart.
- */
-ipcMain.handle('macros:schema', async () => MACROS.builderSchema());
-
-/** A blank v2 document. Ids come from here so the renderer needs no crypto. */
-ipcMain.handle('macros:new', async (_, name) => ({
-  macro: MACROS.newMacro({ id: crypto.randomUUID(), name: typeof name === 'string' && name.trim() ? name.trim() : undefined }),
-}));
-
-ipcMain.handle('macros:new-row', async (_, event) => ({
-  row: MACROS.newRow({ id: crypto.randomUUID(), event: typeof event === 'string' ? event : undefined }),
-}));
-
-ipcMain.handle('macros:new-action', async (_, type) => {
-  try {
-    return { ok: true, action: MACROS.newAction({ id: crypto.randomUUID(), type }) };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-/**
- * Compile a DRAFT document without saving it, so the builder can show the
- * exact commands a row will run. Uses the same compiler the engine does --
- * a preview computed any other way would eventually lie.
- */
-ipcMain.handle('macros:preview', async (_, doc) => {
-  const parsed = MACROS.parseMacro(doc);
-  if (!parsed.ok) return { ok: false, errors: parsed.errors, byEvent: {}, skipped: [] };
-  const { byEvent, skipped } = MACROS.compileMacro(parsed.macro);
-  return { ok: true, errors: [], warnings: parsed.warnings, byEvent, skipped };
-});
-
 ipcMain.handle('macros:open-folder', async () => {
   await shell.openPath(macrosDir);
   return { success: true };
@@ -733,50 +694,279 @@ ipcMain.handle('macros:open-folder', async () => {
 
 // ─── IPC: shell, tunnel, terminal ─────────────────────────────────────────
 
-registerOpenExternal(ipcMain, shell);
-ipcMain.handle('shell:open-data', openPathHandler(shell, dataDir));
-
-registerTunnelIpc(ipcMain, {
-  getWindow: () => mainWindow,
-  tunnelName: 'mentat-mc',
-  services: [{ name: 'game', scheme: 'udp', port: serverPort() }],
-  settings,
-  configPath: path.join(os.homedir(), '.cloudflared', 'config.yml'),
-  credentialsDir: path.join(os.homedir(), '.cloudflared'),
-  deps: { run, tryRun, spawn, fs },
-  note: 'Bedrock is UDP. Cloudflare carries UDP over a tunnel for private '
-    + 'access only, so players must be on WARP (or Cloudflare Spectrum). For '
-    + 'open public play, forward the port on your router instead.',
+ipcMain.handle('shell:open-external', async (_, url) => {
+  if (typeof url !== 'string') return { success: false };
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { success: false };
+  }
+  if (parsed.protocol !== 'https:') return { success: false };
+  await shell.openExternal(parsed.toString());
+  return { success: true };
 });
 
-const localClaude = path.join(os.homedir(), '.local', 'bin', 'claude');
-registerPtyIpc(ipcMain, {
-  getWindow: () => mainWindow,
-  command: fs.existsSync(localClaude) ? localClaude : 'claude',
-  args: ['/mentat-mcbes'],
-  cwd: os.homedir(),
-  env: { ...shellEnv(), TERM: 'xterm-256color' },
-  helperPath: resolveHelperPath(path.join(__dirname, 'sdk', 'utils'), { isPackaged: app.isPackaged }),
-  deps: { spawn },
+ipcMain.handle('shell:open-data', async () => {
+  await shell.openPath(dataDir);
+  return { success: true };
+});
+
+const cloudflaredConfigPath = () => path.join(os.homedir(), '.cloudflared', 'config.yml');
+
+function readTunnelConfig() {
+  const text = quiet('cloudflared.readConfig', () => fs.readFileSync(cloudflaredConfigPath(), 'utf8'), null);
+  if (text === null) return CF.parseTunnelConfig('', serverPort());
+  return quiet('cloudflared.parseConfig', () => CF.parseTunnelConfig(text, serverPort()),
+    CF.parseTunnelConfig('', serverPort()));
+}
+
+ipcMain.handle('cloudflared:check', async () => {
+  if (tryRun('cloudflared.versionNpx', 'npx', ['cloudflared', '--version'], { timeout: 15000, stdio: 'pipe' }) !== null) {
+    return { installed: true };
+  }
+  return { installed: tryRun('cloudflared.version', 'cloudflared', ['--version'], { timeout: 5000, stdio: 'pipe' }) !== null };
+});
+
+ipcMain.handle('cloudflared:install', async () => {
+  try {
+    run('npx', ['bun', 'add', '-g', 'cloudflared'], { timeout: 60000 });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: (e.stderr && e.stderr.toString().trim()) || e.message };
+  }
+});
+
+ipcMain.handle('cloudflared:auth-status', async () => ({
+  authenticated: fs.existsSync(path.join(os.homedir(), '.cloudflared', 'cert.pem')),
+}));
+
+ipcMain.handle('cloudflared:login', async () => new Promise((resolve) => {
+  let proc;
+  try {
+    proc = spawn('cloudflared', ['tunnel', 'login'], { stdio: 'pipe', detached: true, env: shellEnv() });
+  } catch (e) {
+    return resolve({ success: false, error: e.message });
+  }
+  let output = '';
+  const collect = (d) => { output += d.toString(); };
+  proc.stdout.on('data', collect);
+  proc.stderr.on('data', collect);
+  proc.on('error', (e) => resolve({ success: false, error: e.message }));
+  const timer = setTimeout(() => {
+    attempt('cloudflared.login.killTimeout', () => proc.kill());
+    resolve({ success: false, error: 'Login timed out' });
+  }, 300000);
+  proc.on('exit', (code) => {
+    clearTimeout(timer);
+    resolve(code === 0 ? { success: true } : { success: false, error: output.trim() || `Exit code ${code}` });
+  });
+}));
+
+ipcMain.handle('cloudflared:tunnel-status', async () => {
+  const cfg = readTunnelConfig();
+  return { configured: cfg.configured, tunnelName: cfg.tunnel, hostname: cfg.hostname };
+});
+
+ipcMain.handle('cloudflared:setup-tunnel', async (_, domain) => {
+  const hostname = typeof domain === 'string' ? domain.trim() : '';
+  if (!hostname) return { success: false, error: 'Domain is required' };
+  if (!CF.isValidHostname(hostname)) {
+    return { success: false, error: `"${hostname}" is not a valid hostname — use something like mc.example.com` };
+  }
+  try {
+    const tunnelName = 'mentat-mc';
+    const cfDir = path.join(os.homedir(), '.cloudflared');
+    let tunnelId = null;
+
+    const list = tryRun('cloudflared.list', 'cloudflared', ['tunnel', 'list', '-o', 'json'], { timeout: 15000, stdio: 'pipe' });
+    if (list) {
+      const tunnels = quiet('cloudflared.parseList', () => JSON.parse(list), []);
+      const existing = Array.isArray(tunnels) ? tunnels.find((t) => t && t.name === tunnelName) : null;
+      if (existing) {
+        if (fs.existsSync(path.join(cfDir, `${existing.id}.json`))) tunnelId = existing.id;
+        else tryRun('cloudflared.delete', 'cloudflared', ['tunnel', 'delete', '-f', tunnelName], { timeout: 15000, stdio: 'pipe' });
+      }
+    }
+    if (!tunnelId) {
+      const out = run('cloudflared', ['tunnel', 'create', tunnelName], { timeout: 15000, stdio: 'pipe' });
+      tunnelId = CF.parseTunnelId(out);
+      if (!tunnelId) return { success: false, error: `Failed to parse tunnel ID from: ${out}` };
+    }
+
+    fs.mkdirSync(cfDir, { recursive: true });
+    fs.writeFileSync(cloudflaredConfigPath(), CF.renderTunnelConfig({
+      tunnelId,
+      credentialsFile: path.join(cfDir, `${tunnelId}.json`),
+      hostname,
+      port: serverPort(),
+      scheme: 'udp',
+    }));
+
+    try {
+      run('cloudflared', ['tunnel', 'route', 'dns', '--overwrite-dns', tunnelId, hostname], { timeout: 15000, stdio: 'pipe' });
+    } catch (e) {
+      const err = (e.stderr && e.stderr.toString()) || '';
+      if (!err.includes('already exists')) return { success: false, error: `DNS route failed: ${err.trim() || e.message}` };
+    }
+
+    saveSettings({ publicDomain: hostname });
+    return {
+      success: true,
+      tunnelId,
+      hostname,
+      // Say the limitation out loud rather than implying public play works.
+      note: 'Bedrock is UDP. Cloudflare carries UDP over a tunnel for private '
+        + 'access only, so players must be on WARP (or Cloudflare Spectrum). For '
+        + 'open public play, forward the port on your router instead.',
+    };
+  } catch (e) {
+    return { success: false, error: (e.stderr && e.stderr.toString().trim()) || e.message };
+  }
+});
+
+ipcMain.handle('tunnel:start', async () => {
+  if (tunnelProcess && !tunnelProcess.killed) return { success: true, url: tunnelUrl };
+  const { hostname } = readTunnelConfig();
+  if (!hostname) return { success: false, error: 'No tunnel configured — complete setup first' };
+  try {
+    tunnelProcess = spawn('cloudflared', ['tunnel', 'run'], { stdio: 'pipe', detached: true, env: shellEnv() });
+    tunnelUrl = null;
+    let connected = false;
+    const onOutput = (data) => {
+      const text = data.toString();
+      send('tunnel:log', text);
+      if (!connected && CF.isTunnelConnectedLine(text)) {
+        connected = true;
+        tunnelUrl = hostname;
+        send('tunnel:url-update', hostname);
+      }
+    };
+    tunnelProcess.stdout.on('data', onOutput);
+    tunnelProcess.stderr.on('data', onOutput);
+    tunnelProcess.on('exit', (code) => {
+      send('tunnel:log', `\n[cloudflared exited with code ${code}]\n`);
+      tunnelProcess = null;
+      tunnelUrl = null;
+    });
+    for (let i = 0; i < 20 && !tunnelUrl; i++) await new Promise((r) => setTimeout(r, 1000));
+    if (!tunnelUrl) return { success: false, error: 'Named tunnel failed to connect' };
+    return { success: true, url: tunnelUrl };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('tunnel:stop', async () => {
+  if (tunnelProcess && !tunnelProcess.killed) {
+    tunnelProcess.kill('SIGTERM');
+    tunnelProcess = null;
+    tunnelUrl = null;
+  }
+  return { success: true };
+});
+
+ipcMain.handle('tunnel:status', async () => ({
+  running: !!(tunnelProcess && !tunnelProcess.killed),
+  url: tunnelUrl,
+}));
+
+ipcMain.handle('pty:spawn', async (_, cols, rows, skipPerms) => {
+  try {
+    if (ptyProcess) {
+      attempt('pty.killPrevious', () => ptyProcess.kill());
+      ptyProcess = null;
+    }
+    const home = os.homedir();
+    const env = { ...shellEnv(), TERM: 'xterm-256color', COLUMNS: String(cols || 80), LINES: String(rows || 24) };
+    const args = skipPerms ? ['--dangerously-skip-permissions', '/mentat-mcbes'] : ['/mentat-mcbes'];
+
+    if (process.platform === 'win32') {
+      ptyProcess = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'], cwd: home, env });
+    } else {
+      const localClaude = path.join(home, '.local', 'bin', 'claude');
+      const bin = fs.existsSync(localClaude) ? localClaude : 'claude';
+      // asarUnpack'd: python3 cannot execute a script inside the archive.
+      let helperPath = path.join(__dirname, 'pty-helper.py');
+      if (app.isPackaged || __dirname.includes('app.asar')) {
+        helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');
+      }
+      ptyProcess = spawn('python3', [helperPath, bin, ...args], { stdio: ['pipe', 'pipe', 'pipe'], cwd: home, env });
+      ptyProcess.on('error', (e) => console.error('PTY spawn error:', e.message));
+    }
+    const relay = (data) => send('pty:data', data.toString());
+    ptyProcess.stdout.on('data', relay);
+    ptyProcess.stderr.on('data', relay);
+    ptyProcess.on('exit', () => {
+      send('pty:exit');
+      ptyProcess = null;
+    });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.on('pty:write', (_, data) => {
+  if (ptyProcess && !ptyProcess.killed && typeof data === 'string') ptyProcess.stdin.write(data);
+});
+ipcMain.on('pty:resize', () => {
+  if (ptyProcess && ptyProcess.pid && process.platform !== 'win32') {
+    attempt('pty.resize', () => process.kill(ptyProcess.pid, 'SIGWINCH'));
+  }
+});
+ipcMain.on('pty:kill', () => {
+  if (!ptyProcess) return;
+  if (process.platform !== 'win32') attempt('pty.killGroup', () => process.kill(-ptyProcess.pid, 'SIGTERM'));
+  attempt('pty.kill', () => ptyProcess.kill());
+  ptyProcess = null;
 });
 
 // ─── Window and shutdown ──────────────────────────────────────────────────
 
 function createWindow() {
-  mainWindow = createWindow_({
-    BrowserWindow,
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 820,
     title: 'Minecraft Mentat',
-    preload: path.join(__dirname, 'preload.js'),
-    load: { file: path.join(__dirname, 'app.html') },
-    onReady: (win) => setupAutoUpdate(win),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      webSecurity: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    show: false,
   });
   mainWindow.on('closed', () => cleanup());
   mainWindow.webContents.on('did-fail-load', (_, code, desc) => console.error('Load failed:', desc));
+  mainWindow.loadFile(path.join(__dirname, 'app.html'));
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (!app.isPackaged) mainWindow.webContents.openDevTools();
+    setupAutoUpdate(mainWindow);
+  });
 }
 
-const cleanup = createCleanup(() => {
+function killProcess(proc, name) {
+  if (!proc || proc.killed) return;
+  attempt(`kill.${name}.term`, () => {
+    if (process.platform === 'win32') run('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+    else process.kill(-proc.pid, 'SIGTERM');
+  });
+  setTimeout(() => {
+    try {
+      if (!proc.killed) {
+        if (process.platform !== 'win32') process.kill(-proc.pid, 'SIGKILL');
+        proc.kill('SIGKILL');
+      }
+    } catch { /* already gone */ }
+  }, 3000);
+}
+
+function cleanup() {
+  if (cleanupDone) return;
+  cleanupDone = true;
   console.log('Cleaning up...');
 
   // The container is stopped; the VM is deliberately LEFT RUNNING. Booting a
@@ -785,7 +975,7 @@ const cleanup = createCleanup(() => {
   if (serverReady) attempt('server.stopCommand', () => sendCommand('stop'));
   if (runtime === 'container') {
     const bin = limactl();
-    if (bin) tryRun('container.stop', bin, LIMA.nerdctlArgs(RT.VM_NAME, ['stop', RT.CONTAINER_NAME]), { timeout: 30000, stdio: 'pipe' });
+    if (bin) tryRun('container.stop', bin, RT.nerdctlArgs(['stop', RT.CONTAINER_NAME]), { timeout: 30000, stdio: 'pipe' });
   }
   killProcess(serverProcess, 'server');
   killProcess(tunnelProcess, 'tunnel');
@@ -794,7 +984,7 @@ const cleanup = createCleanup(() => {
   if (bridgeServer) attempt('bridge.close', () => bridgeServer.close());
   attempt('log.close', () => logStream.end());
   setTimeout(() => app.quit(), 1000);
-});
+}
 
 app.setName('Minecraft Mentat');
 

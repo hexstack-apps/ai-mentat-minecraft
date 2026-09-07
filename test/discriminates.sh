@@ -63,6 +63,38 @@ mutate "macOS tries to run a BDS binary Mojang never shipped" lib/runtime.js \
   "  return platform === 'darwin' ? 'container' : 'native';" \
   "  return 'native';"
 
+mutate "JSONL parsed as a single JSON blob (breaks multi-VM)" lib/runtime.js \
+  "    try {
+      vms.push(JSON.parse(text));
+    } catch {
+      skipped.push(text.slice(0, 120));
+    }" \
+  "    vms.push(JSON.parse(text));"
+
+mutate "missing VM status defaults to Running" lib/runtime.js \
+  "  return found ? (found.status || 'Unknown') : 'Absent';" \
+  "  return found ? (found.status || 'Running') : 'Absent';"
+
+mutate "Stopped counts as a usable VM" lib/runtime.js \
+  "  return status === 'Running';" \
+  "  return status !== 'Absent';"
+
+mutate "nerdctl loses sudo (containerd is a system service here)" lib/runtime.js \
+  "  return ['shell', VM_NAME, 'sudo', 'nerdctl', ...args];" \
+  "  return ['shell', VM_NAME, 'nerdctl', ...args];"
+
+mutate "unrunnable limactl aborts the fallback search" lib/runtime.js \
+  "  if (bundledPath && exists(bundledPath) && canRun(bundledPath)) return bundledPath;" \
+  "  if (bundledPath && exists(bundledPath)) return bundledPath;"
+
+mutate "Homebrew limactl locations removed" lib/runtime.js \
+  "  for (const candidate of ['/opt/homebrew/bin/limactl', '/usr/local/bin/limactl']) {" \
+  "  for (const candidate of []) {"
+
+mutate "console pipe drops -i (server console becomes unwritable)" lib/runtime.js \
+  "  return nerdctlArgs(['exec', '-i', CONTAINER_NAME, 'sh']);" \
+  "  return nerdctlArgs(['exec', CONTAINER_NAME, 'sh']);"
+
 mutate "shell quoting removed (command injection through the VM shell)" lib/runtime.js \
   "  return \`'\${String(value).replace(/'/g, \"'\\\\''\")}'\`;" \
   "  return String(value);"
@@ -117,38 +149,6 @@ mutate "unknown condition type passes instead of failing closed" lib/macros.js \
 mutate "unsafe placeholder value injected into a live command" lib/macros.js \
   "    return isSafeValue(value) ? String(value) : '';" \
   "    return String(value === undefined ? '' : value);"
-
-
-# ── lib/macros.js — builder schema ────────────────────────────────────────
-
-mutate "builder offers a trigger the bridge cannot deliver" lib/macros.js \
-  "const TRIGGER_SPECS = [" \
-  "const TRIGGER_SPECS = [
-  { event: 'PlayerTransform', type: 'trigger:on_player_transform', label: 'Player moves', placeholders: ['player'] },"
-
-mutate "requiredFields returns optional inputs too" lib/macros.js \
-  "  return spec.inputs.filter((i) => i.required).map((i) => i.name);" \
-  "  return spec.inputs.map((i) => i.name);"
-
-mutate "newAction stops pre-filling declared defaults" lib/macros.js \
-  "    if (input.default !== undefined) config[input.name] = input.default;" \
-  "    ;"
-
-mutate "newAction stops defaulting a select to its first option" lib/macros.js \
-  "    else if (input.type === 'select' && input.options) config[input.name] = input.options[0];" \
-  "    ;"
-
-mutate "newRow accepts an unfireable event instead of falling back" lib/macros.js \
-  "  const trigger = TRIGGER_SPECS.find((t) => t.event === event) || TRIGGER_SPECS[0];" \
-  "  const trigger = { event, type: \`trigger:on_\${event}\`, label: event };"
-
-mutate "the dimension_is limitation note is dropped" lib/macros.js \
-  "    note: 'The console bridge does not report a dimension. Only \"any\" can match; '" \
-  "    note2: 'The console bridge does not report a dimension. Only \"any\" can match; '"
-
-mutate "builderSchema hides an action from the form" lib/macros.js \
-  "    actions: Object.entries(ACTIONS).map(([type, spec]) => ({" \
-  "    actions: Object.entries(ACTIONS).slice(1).map(([type, spec]) => ({"
 
 # ── lib/bds.js ────────────────────────────────────────────────────────────
 
@@ -209,31 +209,33 @@ mutate "recent() exposes the live buffer" lib/bridge-protocol.js \
   "    return this.events.slice(this.events.length - n);" \
   "    return this.events;"
 
-# ── lib/ttl-cache.js ──────────────────────────────────────────────────────
+# ── lib/cloudflared.js ────────────────────────────────────────────────────
 
-mutate "probe cache never caches (main process blocks on every poll)" lib/ttl-cache.js \
-  "    if (cachedAt !== null && now - cachedAt < ttlMs) return value;" \
-  "    ;"
+mutate "ingress continuation keys ignored" lib/cloudflared.js \
+  "    if (kv && current) applyKey(current, kv[1], kv[2]);" \
+  "    if (false) applyKey(current, kv[1], kv[2]);"
 
-mutate "cache never expires (stale VM status forever)" lib/ttl-cache.js \
-  "    cachedAt = clock();
-    return value;" \
-  "    cachedAt = Infinity;
-    return value;"
+mutate "hostname validation accepts anything (shell injection)" lib/cloudflared.js \
+  "  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\$/i.test(host);" \
+  "  return true;"
 
-mutate "freshness stamped before the probe, not after" lib/ttl-cache.js \
-  "    value = fn(...args);
-    // Stamp the time AFTER the call: a probe that takes 20s should be fresh
-    // for ttl from when it finished, not from when it started, or a slow probe
-    // is stale the moment it returns and runs again immediately.
-    cachedAt = clock();" \
-  "    cachedAt = clock();
-    value = fn(...args);"
+mutate "tunnel renders an http service for a UDP game" lib/cloudflared.js \
+  "    \`    service: \${scheme}://localhost:\${port}\`," \
+  "    \`    service: http://localhost:\${port}\`,"
 
-mutate "invalidate stops forcing a re-probe" lib/ttl-cache.js \
-  "  wrapped.invalidate = () => { cachedAt = null; value = undefined; };" \
-  "  wrapped.invalidate = () => {};"
+mutate "configured no longer requires a tunnel id" lib/cloudflared.js \
+  "    configured: !!(tunnel && hostname)," \
+  "    configured: !!hostname,"
 
+# ── lib/failsafe.js ───────────────────────────────────────────────────────
+
+mutate "failsafe stops recording failures" lib/failsafe.js \
+  "  recent.push({ at: Date.now(), op, message, context });" \
+  "  ;"
+
+mutate "failsafe buffer becomes unbounded" lib/failsafe.js \
+  "  if (recent.length > MAX_RECENT) recent.splice(0, recent.length - MAX_RECENT);" \
+  "  ;"
 
 echo
 echo "caught $PASS / $((PASS+FAIL))"

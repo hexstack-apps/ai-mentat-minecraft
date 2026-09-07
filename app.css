@@ -1,12 +1,366 @@
-/* Minecraft Mentat — rules this app does not share.
- *
- * The family shell (tab bar, cards, rows, status dots, buttons, FAQ, terminal
- * overlay) is in sdk/ui/base.css, which app.html loads first. What is left
- * here is genuinely minecraft's: the console pane, the player roster and the
- * macro builder.
- */
-
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-bar {
+  display: flex;
+  background: #151525;
+  border-bottom: 1px solid #2a2a3e;
+  height: 42px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.tab-bar button {
+  -webkit-app-region: no-drag;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 13px;
+  padding: 0 20px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-bar button:hover { color: #ccc; }
+.tab-bar button.active { color: #ff6d5a; border-bottom-color: #ff6d5a; }
+
+.tab-content { flex: 1; overflow: hidden; position: relative; }
+
+.panel { display: none; width: 100%; height: 100%; position: relative; }
+.panel.active { display: block; }
+
+.panel iframe {
+  width: 100%; height: 100%; border: none;
+}
+
+.panel-scroll {
+  width: 100%; height: 100%; overflow-y: auto; padding: 28px 32px;
+}
+
+.card {
+  background: #22223a;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.card h3 {
+  color: #fff;
+  font-size: 14px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #555;
+}
+.status-dot.green { background: #4caf50; }
+.status-dot.red { background: #f44336; }
+.status-dot.amber { background: #ff9800; }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.row:last-child { margin-bottom: 0; }
+
+label {
+  color: #aaa;
+  font-size: 12px;
+  min-width: 70px;
+}
+
+input[type="text"], input[type="number"] {
+  background: #1a1a2e;
+  border: 1px solid #3a3a50;
+  color: #e0e0e0;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  flex: 1;
+  max-width: 340px;
+}
+input:focus { outline: none; border-color: #ff6d5a; }
+
+button.btn {
+  background: #ff6d5a;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+button.btn:hover { background: #e55a48; }
+button.btn:disabled { background: #444; cursor: not-allowed; color: #888; }
+button.btn.secondary { background: #3a3a50; }
+button.btn.secondary:hover { background: #4a4a60; }
+button.btn.danger { background: #c0392b; }
+button.btn.danger:hover { background: #a93226; }
+
+.msg {
+  font-size: 12px;
+  margin-top: 6px;
+  min-height: 16px;
+}
+.msg.error { color: #f44336; }
+.msg.success { color: #4caf50; }
+
+.url-display {
+  background: #1a1a2e;
+  border: 1px solid #3a3a50;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #4caf50;
+  word-break: break-all;
+  user-select: all;
+}
+
+.icon-btn {
+  background: none;
+  border: 1px solid #3a3a50;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s;
+}
+.icon-btn:hover { background: #3a3a50; border-color: #ff6d5a; }
+
+.section-title {
+  color: #fff;
+  font-size: 18px;
+  margin-bottom: 18px;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ccc;
+  font-size: 15px;
+  z-index: 10;
+}
+.loading-overlay.hidden { display: none; }
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 420px;
+  max-width: 90vw;
+}
+
+.loading-icon {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ff6d5a;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: #2a2a3e;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #ff6d5a, #ff9a76);
+  border-radius: 3px;
+  transition: width 1.5s ease-out;
+}
+
+.loading-detail {
+  font-size: 12px;
+  color: #666;
+}
+.loading-detail--permanent {
+  margin-top: 8px;
+  max-width: 280px;
+  text-align: center;
+  line-height: 1.5;
+  color: #555;
+}
+
+.install-log {
+  width: 100%;
+  max-height: 160px;
+  overflow-y: auto;
+  background: #0d0d1a;
+  border: 1px solid #2a2a3e;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #666;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  line-height: 1.5;
+}
+.install-log.hidden { display: none; }
+
+.faq-item {
+  background: #22223a;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.faq-item summary {
+  padding: 16px 20px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.faq-item summary::before {
+  content: '▸';
+  font-size: 12px;
+  color: #ff6d5a;
+  transition: transform 0.2s;
+}
+.faq-item[open] summary::before { transform: rotate(90deg); }
+.faq-item summary:hover { background: #2a2a44; }
+
+.faq-body {
+  padding: 0 20px 18px;
+  color: #ccc;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.faq-body p { margin-bottom: 10px; }
+.faq-body strong { color: #fff; }
+.faq-body code {
+  background: #1a1a2e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #ff6d5a;
+}
+.faq-body ol, .faq-body ul {
+  margin: 6px 0 10px 20px;
+}
+.faq-body li { margin-bottom: 4px; }
+.faq-body em { color: #aaa; }
+
+.terminal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.terminal-overlay.visible { display: flex; }
+
+.terminal-popup {
+  position: relative;
+  width: 95%; height: 92%;
+  background: #0d0d1a;
+  border-radius: 12px;
+  border: 1px solid #3a3a50;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: #151525;
+  border-bottom: 1px solid #2a2a3e;
+  flex-shrink: 0;
+}
+.terminal-header span { color: #aaa; font-size: 13px; }
+
+.terminal-close {
+  background: none; border: none; color: #888;
+  font-size: 20px; cursor: pointer; padding: 2px 8px;
+  border-radius: 4px; line-height: 1;
+}
+.terminal-close:hover { color: #ff6d5a; background: #2a2a3e; }
+
+.terminal-body { flex: 1; overflow: hidden; }
+
+.step-desc {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.step-desc a { color: #ff6d5a; text-decoration: none; }
+.step-desc a:hover { text-decoration: underline; }
+
+.tunnel-log {
+  background: #0d0d1a;
+  border: 1px solid #3a3a50;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #aaa;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* ── Top Bar ── */
+.top-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: #151525;
+  border-bottom: 1px solid #2a2a4a;
+  gap: 12px;
+}
+.top-bar__logo {
+  color: #8888aa;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.top-bar__logo:hover { color: #fff; }
+.top-bar__spacer { flex: 1; }
+
 /* ── MCBES-specific ─────────────────────────────────────────────────────
    Added on top of the stylesheet shared with the sibling apps: the pieces
    below have no counterpart there (a live console pane, a player roster, a
@@ -18,6 +372,7 @@
   letter-spacing: 0.4px;
   text-transform: lowercase;
 }
+
 select {
   background: #23233a;
   border: 1px solid #33334d;
@@ -28,6 +383,7 @@ select {
   min-width: 160px;
 }
 select:focus { outline: none; border-color: #ff6d5a; }
+
 .inline-check {
   min-width: auto;
   display: flex;
@@ -38,6 +394,7 @@ select:focus { outline: none; border-color: #ff6d5a; }
   color: #aaa;
 }
 .inline-check input { accent-color: #ff6d5a; }
+
 /* The console and the tunnel log share this. `overflow-anchor: none` keeps the
    browser from fighting the explicit scrollTop assignment on every append. */
 .console-log {
@@ -56,6 +413,7 @@ select:focus { outline: none; border-color: #ff6d5a; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .player-list {
   color: #888;
   display: flex;
@@ -70,6 +428,7 @@ select:focus { outline: none; border-color: #ff6d5a; }
   color: #e0e0e0;
   padding: 4px 12px;
 }
+
 /* A macro row that cannot run is displayed, not hidden — see app.js. */
 .skipped-list {
   color: #d9a05b;
@@ -78,139 +437,9 @@ select:focus { outline: none; border-color: #ff6d5a; }
   margin: 4px 0 0 18px;
 }
 .skipped-list li { margin-bottom: 3px; }
+
 .card.notice {
   background: #241f18;
   border-color: #4a3a22;
 }
 .card.notice h3 { color: #e0b070; }
-/* ── Macro builder ──────────────────────────────────────────────────────
-   The clause layout (WHEN / IF / DO) mirrors the .macro v2 row shape, so what
-   the form shows and what the compiler reads line up one-to-one. */
-
-.builder__head {
-  align-items: center;
-  border-bottom: 1px solid #2a2a3e;
-  display: flex;
-  gap: 12px;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
-}
-.builder__name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-}
-.builder__file {
-  color: #6d6d88;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-}
-.builder__row {
-  background: #1e1e33;
-  border: 1px solid #2f2f47;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  padding: 12px 14px;
-}
-.builder__row-head {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.builder__row-title {
-  color: #8888aa;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-}
-.builder__clause {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.builder__clause--stack { align-items: flex-start; }
-/* Fixed width so WHEN / IF / DO line up down the left edge and the clauses
-   read as a sentence rather than three unrelated rows. */
-.builder__keyword {
-  color: #ff6d5a;
-  flex-shrink: 0;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  padding-top: 7px;
-  width: 44px;
-}
-.builder__hint {
-  color: #6d6d88;
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-}
-.builder__list { flex: 1; }
-.builder__item {
-  background: #23233a;
-  border: 1px solid #33334d;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  padding: 9px 11px;
-}
-.builder__item-head {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.builder__fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.builder__field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.builder__field-label {
-  color: #8888aa;
-  font-size: 10.5px;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-}
-.builder__input {
-  background: #1a1a2e;
-  border: 1px solid #33334d;
-  border-radius: 5px;
-  color: #e0e0e0;
-  font-size: 12.5px;
-  min-width: 130px;
-  padding: 6px 9px;
-}
-.builder__input:focus { border-color: #ff6d5a; outline: none; }
-.builder__add {
-  font-size: 12px;
-  padding: 5px 12px;
-}
-/* A limitation of the transport, stated where the choice is made. */
-.builder__note {
-  color: #d9a05b;
-  font-size: 11.5px;
-  line-height: 1.5;
-  margin-top: 7px;
-}
-.builder__preview { margin-top: 6px; }
-.builder__preview h4 {
-  color: #8888aa;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-}
-.builder__preview-pre {
-  height: 140px;
-  margin-bottom: 12px;
-}
