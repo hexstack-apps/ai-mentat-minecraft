@@ -1,0 +1,151 @@
+{
+  "name": "ai-mentat-minecraft",
+  "version": "0.1.0",
+  "description": "Hexstack Mentat MCBES \u2014 local Minecraft Bedrock server desktop app with macros, Claude Code MCP and a Cloudflare tunnel",
+  "main": "electron-main.bundle.js",
+  "productName": "Hexstack Mentat MCBES",
+  "shop_link": "https://hexstack.app/mentat-mcbes/",
+  "itch_io": {
+    "user": "hexstack-app",
+    "game": "mentat-mcbes"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.js",
+    "run": "npm run setup && node sdk/utils/bundle-electron.js && electron electron-main.bundle.js",
+    "build": "node scripts/build-app.js",
+    "check": "npm run build && node scripts/start-built.js",
+    "gui": "node sdk/utils/bundle-electron.js && electron electron-main.bundle.js",
+    "test": "node --test 'test/*.js'",
+    "test:mutation": "sh test/discriminates.sh",
+    "bundle": "node sdk/utils/bundle-electron.js",
+    "build:mac": "node sdk/utils/bundle-electron.js && electron-builder --mac dmg --universal -c.mac.identity=null",
+    "build:mac:signed": "node sdk/utils/bundle-electron.js && APPLE_KEYCHAIN_PROFILE=CCO-notary electron-builder --mac dmg --universal",
+    "build:win": "node sdk/utils/bundle-electron.js && electron-builder --win msi",
+    "build:linux": "node sdk/utils/bundle-electron.js && electron-builder --linux deb",
+    "build:all": "npm run build:mac && npm run build:win && npm run build:linux",
+    "dist": "npm run build:all",
+    "publish": "node sdk/logic/publish.js --app=mentat-mcbes",
+    "release": "node sdk/logic/release.js",
+    "download:lima": "node scripts/download-lima.js",
+    "build:mac:store": "node sdk/utils/bundle-electron.js && electron-builder --mac mas"
+  },
+  "keywords": [
+    "minecraft",
+    "bedrock",
+    "dedicated-server",
+    "self-hosted",
+    "lima",
+    "mcp",
+    "electron",
+    "mentat"
+  ],
+  "author": "HexStack",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.16",
+    "npm": ">=10.0.0"
+  },
+  "signing": {
+    "appName": "Hexstack Mentat MCBES",
+    "bundleId": "app.hexstack.mentat-mcbes",
+    "minMacOS": "10.15",
+    "developerIdApplication": "Developer ID Application: Roman Chuvilev (A646WU4GA4)",
+    "notaryProfile": "CCO-notary"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0"
+  },
+  "build": {
+    "appId": "app.hexstack.mentat-mcbes",
+    "productName": "Hexstack Mentat MCBES",
+    "publish": {
+      "provider": "generic",
+      "url": ""
+    },
+    "directories": {
+      "output": "/.hexstack-app/ai-mentat-minecraft"
+    },
+    "artifactName": "mentat-mcbes-${version}.${ext}",
+    "electronVersion": "44.0.0",
+    "buildDependenciesFromSource": false,
+    "npmRebuild": false,
+    "asarUnpack": [
+      "sdk/utils/pty-helper.py"
+    ],
+    "files": [
+      "electron-main.bundle.js",
+      "preload.js",
+      "app.html",
+      "app.css",
+      "app.js",
+      "sdk/vendor/",
+      "sdk/ui/base.css",
+      "sdk/ui/update-bar.js",
+      "sdk/utils/pty-helper.py",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bedrock-mcp-server.mjs",
+        "to": "bedrock-mcp-server.mjs"
+      }
+    ],
+    "extraMetadata": {
+      "main": "electron-main.bundle.js"
+    },
+    "mac": {
+      "category": "public.app-category.games",
+      "identity": "Roman Chuvilev (A646WU4GA4)",
+      "notarize": true,
+      "hardenedRuntime": true,
+      "entitlements": "sdk/build/entitlements.mac.plist",
+      "entitlementsInherit": "sdk/build/entitlements.mac.plist",
+      "target": [
+        "dmg"
+      ],
+      "extraResources": [
+        {
+          "from": "bedrock-mcp-server.mjs",
+          "to": "bedrock-mcp-server.mjs"
+        },
+        {
+          "from": "lima-bin",
+          "to": "lima-bin",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
+    },
+    "mas": {
+      "identity": "3rd Party Mac Developer Application: Roman Chuvilev (A646WU4GA4)",
+      "provisioningProfile": "./certs/mas-mentat-mcbes.provisionprofile",
+      "entitlements": "sdk/build/entitlements.mas.plist",
+      "entitlementsInherit": "sdk/build/entitlements.mas.inherit.plist"
+    },
+    "win": {
+      "target": [
+        "msi"
+      ]
+    },
+    "msi": {
+      "artifactName": "mentat-mcbes-${version}.msi"
+    },
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Game"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hexstack-apps/ai-mentat-minecraft.git"
+  }
+}

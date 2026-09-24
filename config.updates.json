@@ -1,0 +1,16 @@
+{
+  "updatesRepoUrl": "",
+  "butlerApiKeyEnvVar": "BUTLER_API_KEY",
+  "apps": {
+    "mentat-mcbes": {
+      "dir": ".",
+      "productName": "Hexstack Mentat MCBES",
+      "itchIo": {
+        "user": "hexstack-app",
+        "game": "mentat-mcbes",
+        "channels": { "mac": "osx", "win": "windows", "linux": "linux" }
+      },
+      "updatesRepo": { "subdir": "mentat-mcbes", "feedUrl": "" }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+node_modules/
+/dist/
+/electron-main.bundle.js
+.DS_Store
+
+# signing material — never commit
+certs/
+
+# generated / local state
+app-updates-repo/
+lima-bin/bin/
+lima-bin/share/
+
+# the local control-port secret and app state — never commit
+bridge-token
+settings.json
+
+# environment files — never commit
+.env
+.env.*
+
+# copied out of the SDK at bundle time (sdk/ui/update-bar.js).
+# Anchored to the root so the source copy in sdk/ stays tracked.
+/update-ui.js

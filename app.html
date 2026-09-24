@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- The renderer only talks to the main process over IPC; it loads nothing
+       from the network, so the policy can forbid it outright. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
+  <title>Minecraft Mentat</title>
+  <link rel="stylesheet" href="sdk/ui/base.css">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="sdk/vendor/xterm.css">
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="#" class="top-bar__logo" id="logo-link">hexstack.app</a>
+  <div class="top-bar__spacer"></div>
+  <span class="top-bar__runtime" id="runtime-badge"></span>
+</div>
+
+<div class="tab-bar">
+  <button class="active" data-tab="server">Server</button>
+  <button data-tab="macros">Macros</button>
+  <button data-tab="mcp">Claude Code MCP</button>
+  <button data-tab="tunnel">Cloudflare Tunnel</button>
+  <button data-tab="faq">FAQ</button>
+</div>
+
+<div class="tab-content">
+
+  <!-- ── Tab 1: Server ──────────────────────────────────────────────── -->
+  <div id="tab-server" class="panel active">
+    <div class="panel-scroll">
+
+      <div class="card">
+        <h3><span id="server-dot" class="status-dot"></span> Bedrock Server</h3>
+        <p class="step-desc" id="server-desc">Checking…</p>
+        <div class="row">
+          <button class="btn" id="server-start-btn">Start Server</button>
+          <button class="btn danger" id="server-stop-btn" style="display:none">Stop Server</button>
+          <button class="btn" id="server-restart-btn" style="display:none">Restart</button>
+          <button class="btn" id="server-install-btn" style="display:none">Install</button>
+          <button class="icon-btn" id="open-data-btn" title="Open the data folder">📁</button>
+        </div>
+        <div id="server-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h3>Players online (<span id="player-count">0</span>)</h3>
+        <div id="player-list" class="player-list">Nobody is connected.</div>
+      </div>
+
+      <div class="card">
+        <h3>Console</h3>
+        <pre id="server-log" class="console-log"></pre>
+        <div class="row">
+          <input type="text" id="console-input" placeholder="A console command, no leading slash — e.g. time set day">
+          <button class="btn" id="console-send-btn">Send</button>
+        </div>
+        <div id="console-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h3>server.properties</h3>
+        <p class="step-desc">BDS reads this once at startup, so changes take effect on the next restart.</p>
+        <div class="row">
+          <label>Server name</label>
+          <input type="text" id="prop-server-name">
+        </div>
+        <div class="row">
+          <label>Game mode</label>
+          <select id="prop-gamemode">
+            <option value="survival">survival</option>
+            <option value="creative">creative</option>
+            <option value="adventure">adventure</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Difficulty</label>
+          <select id="prop-difficulty">
+            <option value="peaceful">peaceful</option>
+            <option value="easy">easy</option>
+            <option value="normal">normal</option>
+            <option value="hard">hard</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Max players</label>
+          <input type="text" id="prop-max-players">
+        </div>
+        <div class="row">
+          <label>Port (UDP)</label>
+          <input type="text" id="prop-server-port">
+        </div>
+        <div class="row">
+          <label>Cheats</label>
+          <label class="inline-check"><input type="checkbox" id="prop-allow-cheats"> allow-cheats</label>
+          <label class="inline-check"><input type="checkbox" id="prop-online-mode"> online-mode</label>
+        </div>
+        <div class="row">
+          <button class="btn" id="props-save-btn">Save</button>
+        </div>
+        <div id="props-msg" class="msg"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Tab 2: Macros ──────────────────────────────────────────────── -->
+  <div id="tab-macros" class="panel">
+    <div class="panel-scroll">
+
+      <div class="card">
+        <h3>Macros</h3>
+        <p class="step-desc">
+          A macro reacts to a server event by running console commands.
+          Only <strong>player join</strong>, <strong>player leave</strong> and <strong>chat</strong>
+          can trigger one — the bridge reads the server console, and BDS prints nothing else.
+          Rows listening for anything else are listed below as not runnable.
+        </p>
+        <div class="row">
+          <button class="btn" id="macros-new-btn">+ New macro</button>
+          <button class="btn secondary" id="macros-refresh-btn">Refresh</button>
+          <button class="btn secondary" id="macros-folder-btn">Open macros folder</button>
+        </div>
+        <div id="macros-msg" class="msg"></div>
+      </div>
+
+      <!-- The builder. Every control in here is generated from the schema the
+           main process serves, so it tracks lib/macros.js automatically. -->
+      <div class="card builder" id="builder" style="display:none">
+        <div class="builder__head">
+          <input type="text" id="builder-name" class="builder__name" placeholder="Macro name">
+          <span class="builder__file" id="builder-file"></span>
+          <label class="inline-check"><input type="checkbox" id="builder-enabled"> Enabled</label>
+        </div>
+
+        <div id="builder-rows"></div>
+
+        <div class="row">
+          <button class="btn secondary" id="builder-add-row">+ Add rule</button>
+        </div>
+
+        <div class="builder__preview">
+          <h4>Compiles to</h4>
+          <pre id="builder-preview" class="console-log builder__preview-pre"></pre>
+        </div>
+
+        <div id="builder-msg" class="msg"></div>
+        <div class="row">
+          <button class="btn" id="builder-save">Save</button>
+          <button class="btn secondary" id="builder-duplicate">Duplicate</button>
+          <button class="btn danger" id="builder-delete">Delete</button>
+          <button class="btn secondary" id="builder-close">Close</button>
+        </div>
+      </div>
+
+      <div id="macro-cards"></div>
+
+    </div>
+  </div>
+
+  <!-- ── Tab 3: Claude Code MCP ─────────────────────────────────────── -->
+  <div id="tab-mcp" class="panel">
+    <div class="panel-scroll">
+
+      <div class="card">
+        <h3><span id="mcp-dot" class="status-dot"></span> Minecraft MCP server for Claude Code</h3>
+        <p class="step-desc">
+          Registers a <code>minecraft</code> MCP server at user scope and installs the
+          <code>/mentat-mcbes</code> command. Claude Code can then run console commands,
+          broadcast messages, list players and read recent events.
+        </p>
+        <div class="row">
+          <button class="btn" id="mcp-install-btn">Install MCP server</button>
+          <button class="btn danger" id="mcp-uninstall-btn" style="display:none">Uninstall</button>
+        </div>
+        <div id="mcp-msg" class="msg"></div>
+      </div>
+
+      <div class="card">
+        <h3>Claude Code</h3>
+        <div class="row">
+          <button class="btn" id="terminal-open-btn">Open Claude Code terminal</button>
+          <label class="inline-check"><input type="checkbox" id="skip-perms"> Skip permissions</label>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="terminal-overlay" class="terminal-overlay">
+      <div class="terminal-popup">
+        <div class="terminal-header">
+          <span>claude /mentat-mcbes</span>
+          <button class="icon-btn" id="terminal-close-btn">✕</button>
+        </div>
+        <div id="terminal-container" class="terminal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 4: Cloudflare Tunnel ───────────────────────────────────── -->
+  <div id="tab-tunnel" class="panel">
+    <div class="panel-scroll">
+
+      <div class="card notice">
+        <h3>Read this first</h3>
+        <p class="step-desc">
+          Bedrock is <strong>UDP</strong>. Cloudflare carries UDP through a tunnel for
+          <strong>private access only</strong> — players must be on WARP, or you need
+          Cloudflare Spectrum. For open public play, forward the UDP port on your router
+          instead. The wizard below builds a correct named tunnel for the WARP case.
+        </p>
+      </div>
+
+      <div class="card" id="step-install">
+        <h3><span id="cf-dot" class="status-dot"></span> Step 1 — Install cloudflared</h3>
+        <div class="row" id="cf-install-row">
+          <button class="btn" id="cf-install-btn">Install cloudflared</button>
+        </div>
+        <div id="cf-msg" class="msg"></div>
+      </div>
+
+      <div class="card" id="step-auth" style="display:none">
+        <h3><span id="auth-dot" class="status-dot"></span> Step 2 — Authenticate with Cloudflare</h3>
+        <div class="row" id="auth-row">
+          <button class="btn" id="auth-btn">Authenticate</button>
+        </div>
+        <div id="auth-msg" class="msg"></div>
+      </div>
+
+      <div class="card" id="step-setup" style="display:none">
+        <h3><span id="setup-dot" class="status-dot"></span> Step 3 — Create named tunnel</h3>
+        <p class="step-desc">The domain must already be on Cloudflare DNS.</p>
+        <div class="row">
+          <label>Hostname</label>
+          <input type="text" id="tunnel-domain" placeholder="e.g. mc.yourdomain.com">
+        </div>
+        <div class="row">
+          <button class="btn" id="setup-btn">Create tunnel &amp; DNS route</button>
+        </div>
+        <div id="setup-msg" class="msg"></div>
+      </div>
+
+      <div class="card" id="step-run" style="display:none">
+        <h3><span id="tunnel-dot" class="status-dot"></span> Tunnel</h3>
+        <div id="tunnel-configured-host" class="step-desc"></div>
+        <div class="row">
+          <button class="btn" id="tunnel-start-btn">Start tunnel</button>
+          <button class="btn danger" id="tunnel-stop-btn" style="display:none">Stop tunnel</button>
+        </div>
+        <div id="tunnel-msg" class="msg"></div>
+        <pre id="tunnel-log" class="console-log" style="display:none"></pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Tab 5: FAQ ─────────────────────────────────────────────────── -->
+  <div id="tab-faq" class="panel">
+    <div class="panel-scroll">
+
+      <details class="faq-item">
+        <summary>Why does this need a virtual machine on a Mac?</summary>
+        <div class="faq-body">
+          <p>Mojang ships the Bedrock Dedicated Server as a Windows binary and a Linux
+          binary. There is no macOS build. So on macOS this app runs the Linux server
+          inside a container, in a lightweight Lima VM using Apple's own
+          Virtualization.framework — no Docker Desktop, no QEMU.</p>
+          <p>On Windows and Linux the server runs natively and no VM is involved.</p>
+          <p>The VM stays running after you close the app, because booting it takes
+          minutes while booting the container takes seconds. Only the container is
+          stopped on exit.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Can my friends join over the Cloudflare tunnel?</summary>
+        <div class="faq-body">
+          <p>Only if they are on Cloudflare WARP, or you have Spectrum. Minecraft
+          Bedrock speaks RakNet over UDP, and a standard Cloudflare Tunnel carries
+          UDP for private network access rather than public ingress.</p>
+          <p>For ordinary public play, forward the UDP port (19132 by default) on your
+          router to this machine. The tunnel is still useful for a private group and
+          for reaching the server without exposing your home IP.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Which events can a macro react to?</summary>
+        <div class="faq-body">
+          <p>Player join, player leave, and chat messages. That is everything the
+          Bedrock server prints to its console, and the console is what this app
+          reads.</p>
+          <p>The alternative — the mcpews WebSocket protocol — exposes about 45 event
+          types, including block placement and player movement. It was rejected
+          because it requires a player to type <code>/wsserver</code> in-game every
+          single session, and it authenticates as a player, so it does not work at
+          all on an offline-mode server.</p>
+          <p>A macro row that listens for one of those unavailable events is shown in
+          the Macros tab as not runnable, with the reason. It is never silently
+          ignored.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>How do I install the Bedrock server itself?</summary>
+        <div class="faq-body">
+          <p>On macOS, press Install — the container image is pulled for you.</p>
+          <p>On Windows and Linux, download the Bedrock Dedicated Server from
+          minecraft.net and unzip it into the data folder shown on the Server tab.
+          Mojang requires you to accept their EULA on that download page, so the app
+          does not fetch it for you.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Where is my world saved?</summary>
+        <div class="faq-body">
+          <p>In the data folder shown on the Server tab, under <code>bds/</code>. The
+          📁 button opens it. Worlds, <code>server.properties</code> and allowlists all
+          live there, and they survive app updates.</p>
+          <p>Stopping the server through this app always sends the console
+          <code>stop</code> command first, which is what makes BDS flush the world to
+          disk. Force-quitting instead risks a corrupt level.</p>
+        </div>
+      </details>
+
+    </div>
+  </div>
+
+</div>
+
+<script src="sdk/vendor/xterm.js"></script>
+<script src="sdk/vendor/addon-fit.js"></script>
+<script src="sdk/ui/update-bar.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "id": "470bf056-d5e9-4061-bed5-89d05c5a45df",
+  "name": "Untitled Macro",
+  "description": "",
+  "version": 2,
+  "author": "",
+  "triggerMode": "event",
+  "rows": [
+    {
+      "id": "64fcc8ee-d67e-4c08-9ed0-74d93825cc75",
+      "when": {
+        "id": "c4e5b965-a8b5-4d84-b75e-8c33a4597a01",
+        "type": "trigger:on_player_transform",
+        "label": "Player Position Update",
+        "config": {
+          "eventName": "PlayerTransform",
+          "dimension": "any"
+        }
+      },
+      "conditions": [
+        {
+          "id": "a0ab19d5-41a1-4764-b7c1-a1af394515ff",
+          "type": "dimension_is",
+          "label": "Dimension Is",
+          "config": {},
+          "negate": false,
+          "joinOperator": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "id": "f0851a6f-4cce-49c9-b34f-e1a50e6cb23c",
+          "type": "give",
+          "label": "Give Item",
+          "config": {
+            "target": "@s",
+            "amount": 1,
+            "data": 0,
+            "item": "diamond_pickaxe"
+          }
+        }
+      ],
+      "results": [
+        {
+          "id": "45585344-5e32-4cdb-9613-9c1b34438e71",
+          "type": "spawn_particles",
+          "label": "Spawn Particles",
+          "config": {}
+        }
+      ],
+      "enabled": false
+    }
+  ],
+  "variables": [],
+  "createdAt": "2026-04-02T23:14:30.631Z",
+  "updatedAt": "2026-04-02T23:14:30.632Z"
+}
